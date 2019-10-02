@@ -1,15 +1,16 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Globalization;
 using System.Linq;
 using System.Security;
 using System.Threading;
 using System.Threading.Tasks;
-using Bot.Builder.Community.Adapters.Alexa.Directives;
-using Bot.Builder.Community.Adapters.Alexa.Integration;
+using Alexa.NET.Request;
+using Alexa.NET.Request.Type;
+using Alexa.NET.Response;
 using Microsoft.Bot.Builder;
-using Microsoft.Bot.Schema; 
+using Microsoft.Bot.Schema;
+using CardImage = Alexa.NET.Response.CardImage;
 
 namespace Bot.Builder.Community.Adapters.Alexa
 {
@@ -34,7 +35,7 @@ namespace Bot.Builder.Community.Adapters.Alexa
             return this;
         }
 
-        public async Task<AlexaResponseBody> ProcessActivity(AlexaRequestBody alexaRequest, BotCallbackHandler callback)
+        public async Task<SkillResponse> ProcessActivity(SkillRequest alexaRequest, BotCallbackHandler callback)
         {
             TurnContext context = null;
 
@@ -54,7 +55,7 @@ namespace Bot.Builder.Community.Adapters.Alexa
                     context.TurnState.Add("AlexaSessionAttributes", new Dictionary<string, string>());
                 }
 
-                context.TurnState.Add("AlexaResponseDirectives", new List<IAlexaDirective>());
+                context.TurnState.Add("AlexaResponseDirectives", new List<IDirective>());
 
                 Responses = new Dictionary<string, List<Activity>>();
 
@@ -64,7 +65,7 @@ namespace Bot.Builder.Community.Adapters.Alexa
 
                 try
                 {
-                    AlexaResponseBody response = null;
+                    SkillResponse response = null;
                     var activities = Responses.ContainsKey(key) ? Responses[key] : new List<Activity>();
                     response = CreateResponseFromLastActivity(activities, context);
                     response.SessionAttributes = context.AlexaSessionAttributes();
@@ -120,7 +121,7 @@ namespace Bot.Builder.Community.Adapters.Alexa
             return Task.FromResult(resourceResponses.ToArray());
         }
 
-        private static Activity RequestToActivity(AlexaRequestBody skillRequest)
+        private static Activity RequestToActivity(SkillRequest skillRequest)
         {
             var system = skillRequest.Context.System;
 
@@ -133,19 +134,19 @@ namespace Bot.Builder.Community.Adapters.Alexa
                 Conversation = new ConversationAccount(false, "conversation", skillRequest.Session.SessionId),
                 Type = skillRequest.Request.Type,
                 Id = skillRequest.Request.RequestId,
-                Timestamp = DateTime.ParseExact(skillRequest.Request.Timestamp, "MM/dd/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
+                Timestamp = skillRequest.Request.Timestamp,
                 Locale = skillRequest.Request.Locale
             };
 
-            switch (activity.Type)
+            switch (skillRequest.Request)
             {
-                case AlexaRequestTypes.IntentRequest:
-                    activity.Value = (skillRequest.Request as AlexaIntentRequest)?.Intent;
-                    activity.Code = (skillRequest.Request as AlexaIntentRequest)?.DialogState.ToString();
+                case IntentRequest intentRequest:
+                    activity.Value = intentRequest.Intent;
+                    activity.Code = intentRequest.DialogState;
                     break;
-                case AlexaRequestTypes.SessionEndedRequest:
-                    activity.Code = (skillRequest.Request as AlexaSessionEndRequest)?.Reason;
-                    activity.Value = (skillRequest.Request as AlexaSessionEndRequest)?.Error;
+                case SessionEndedRequest sessionEndedRequest:
+                    activity.Code = sessionEndedRequest.Reason.ToString();
+                    activity.Value = sessionEndedRequest.Error;
                     break;
             }
 
@@ -154,25 +155,23 @@ namespace Bot.Builder.Community.Adapters.Alexa
             return activity;
         }
 
-        private AlexaResponseBody CreateResponseFromLastActivity(IEnumerable<Activity> activities, ITurnContext context)
+        private SkillResponse CreateResponseFromLastActivity(IEnumerable<Activity> activities, ITurnContext context)
         {
-            var response = new AlexaResponseBody()
+            var response = new SkillResponse()
             {
                 Version = "1.0",
-                Response = new AlexaResponse()
+                Response = new ResponseBody()
                 {
-                    ShouldEndSession = context.GetAlexaRequestBody().Request.Type ==
-                                       AlexaRequestTypes.SessionEndedRequest
+                    ShouldEndSession = context.GetAlexaRequestBody().Request is SessionEndedRequest
                                        || ShouldEndSessionByDefault
                 }
             };
 
-            if (context.GetAlexaRequestBody().Request.Type == AlexaRequestTypes.SessionEndedRequest
+            if (context.GetAlexaRequestBody().Request is SessionEndedRequest
                 && (activities == null || !activities.Any()))
             {
-                response.Response.OutputSpeech = new AlexaOutputSpeech()
+                response.Response.OutputSpeech = new PlainTextOutputSpeech
                 {
-                    Type = AlexaOutputSpeechType.PlainText,
                     Text = string.Empty
                 };
                 return response;
@@ -195,26 +194,21 @@ namespace Bot.Builder.Community.Adapters.Alexa
 
             if (!string.IsNullOrEmpty(activity.Speak))
             {
-                response.Response.OutputSpeech = new AlexaOutputSpeech()
+                var ssmlResponse = new SsmlOutputSpeech
                 {
-                    Type = AlexaOutputSpeechType.SSML,
                     Ssml = activity.Speak.Contains("<speak>")
                         ? activity.Speak
                         : $"<speak>{activity.Speak}</speak>",
                 };
 
-                if (!string.IsNullOrEmpty(activity.Text))
-                {
-                    response.Response.OutputSpeech.Text = $"{activity.Text} ";
-                }
+                response.Response.OutputSpeech = ssmlResponse;
             }
             else if (!string.IsNullOrEmpty(activity.Text))
             {
                 if (response.Response.OutputSpeech == null)
                 {
-                    response.Response.OutputSpeech = new AlexaOutputSpeech()
+                    response.Response.OutputSpeech = new PlainTextOutputSpeech()
                     {
-                        Type = AlexaOutputSpeechType.PlainText,
                         Text = activity.Text
                     };
                 }
@@ -224,11 +218,10 @@ namespace Bot.Builder.Community.Adapters.Alexa
             {
                 var repromptSpeech = context.TurnState.Get<string>("AlexaReprompt");
 
-                response.Response.Reprompt = new Reprompt()
+                response.Response.Reprompt = new global::Alexa.NET.Response.Reprompt
                 {
-                    OutputSpeech = new AlexaOutputSpeech()
-                    {
-                        Type = AlexaOutputSpeechType.SSML,
+                    OutputSpeech = new SsmlOutputSpeech
+                    { 
                         Ssml = repromptSpeech.Contains("<speak>")
                         ? repromptSpeech
                         : $"<speak>{repromptSpeech}</speak>"
@@ -256,21 +249,18 @@ namespace Bot.Builder.Community.Adapters.Alexa
             return response;
         }
 
-        private void AddCardToResponse(ITurnContext context, AlexaResponseBody response, Activity activity)
+        private void AddCardToResponse(ITurnContext context, SkillResponse response, Activity activity)
         {
             if (activity.Attachments != null 
                 && activity.Attachments.Any(a => a.ContentType == SigninCard.ContentType))
             {
-                response.Response.Card = new AlexaCard()
-                {
-                    Type = AlexaCardType.LinkAccount
-                };
+                response.Response.Card = new LinkAccountCard();
             }
             else
             {
-                if (context.TurnState.ContainsKey("AlexaCard") && context.TurnState["AlexaCard"] is AlexaCard)
+                if (context.TurnState.ContainsKey("AlexaCard") && context.TurnState["AlexaCard"] is ICard)
                 {
-                    response.Response.Card = context.TurnState.Get<AlexaCard>("AlexaCard");
+                    response.Response.Card = context.TurnState.Get<ICard>("AlexaCard");
                 }
                 else if (ConvertBotBuilderCardsToAlexaCards)
                 {
@@ -279,12 +269,12 @@ namespace Bot.Builder.Community.Adapters.Alexa
             }
         }
 
-        private static void AddDirectivesToResponse(ITurnContext context, AlexaResponseBody response)
+        private static void AddDirectivesToResponse(ITurnContext context, SkillResponse response)
         {
             response.Response.Directives = context.AlexaResponseDirectives().Select(a => a).ToArray();
         }
 
-        private static void CreateAlexaCardFromAttachment(Activity activity, AlexaResponseBody response)
+        private static void CreateAlexaCardFromAttachment(Activity activity, SkillResponse response)
         {
             var attachment = activity.Attachments != null && activity.Attachments.Any()
                 ? activity.Attachments[0]
@@ -303,28 +293,24 @@ namespace Bot.Builder.Community.Adapters.Alexa
 
                         break;
                     case SigninCard.ContentType:
-                        response.Response.Card = new AlexaCard()
-                        {
-                            Type = AlexaCardType.LinkAccount
-                        };
+                        response.Response.Card = new LinkAccountCard();
                         break;
                 }
             }
         }
 
-        private static AlexaCard CreateAlexaCardFromHeroCard(Attachment attachment)
+        private static ICard CreateAlexaCardFromHeroCard(Attachment attachment)
         {
             if (!(attachment.Content is HeroCard heroCardContent))
                 return null;
 
-            AlexaCard alexaCard = null;
+            ICard alexaCard = null;
 
             if (heroCardContent.Images != null && heroCardContent.Images.Any())
             {
-                alexaCard = new AlexaCard()
-                {
-                    Type = AlexaCardType.Standard,
-                    Image = new AlexaCardImage()
+                var standardCard = new StandardCard()
+                { 
+                    Image = new CardImage()
                     {
                         SmallImageUrl = heroCardContent.Images[0].Url,
                         LargeImageUrl = heroCardContent.Images.Count > 1 ? heroCardContent.Images[1].Url : null
@@ -333,28 +319,27 @@ namespace Bot.Builder.Community.Adapters.Alexa
 
                 if (heroCardContent.Title != null)
                 {
-                    alexaCard.Title = heroCardContent.Title;
+                    standardCard.Title = heroCardContent.Title;
                 }
 
                 if (heroCardContent.Text != null)
                 {
-                    alexaCard.Content = heroCardContent.Text;
+                    standardCard.Content = heroCardContent.Text;
                 }
+
+                alexaCard = standardCard;
             }
             else
             {
-                alexaCard = new AlexaCard()
-                {
-                    Type = AlexaCardType.Simple
-                };
+                var simpleCard = new SimpleCard();
                 if (heroCardContent.Title != null)
                 {
-                    alexaCard.Title = heroCardContent.Title;
+                    simpleCard.Title = heroCardContent.Title;
                 }
 
                 if (heroCardContent.Text != null)
                 {
-                    alexaCard.Content = heroCardContent.Text;
+                    simpleCard.Content = heroCardContent.Text;
                 }
             }
 

@@ -6,6 +6,7 @@ using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Alexa.NET.Request;
 using Bot.Builder.Community.Adapters.Alexa.Helpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Bot.Builder;
@@ -49,20 +50,18 @@ namespace Bot.Builder.Community.Adapters.Alexa.Integration.AspNet.Core
                 throw new ArgumentNullException(nameof(bot));
             }
 
-            AlexaRequestBody skillRequest;
+            SkillRequest alexaRequest;
 
-            var memoryStream = new MemoryStream();
-            httpRequest.Body.CopyTo(memoryStream);
-            var requestBytes = memoryStream.ToArray();
-            memoryStream.Position = 0;
+            var streamReader = new StreamReader(httpRequest.Body, Encoding.UTF8);
+            var body = await streamReader.ReadToEndAsync();
 
-            using (var bodyReader = new JsonTextReader(new StreamReader(memoryStream, Encoding.UTF8)))
+            using (var jsonTextReader = new JsonTextReader(new StringReader(body)))
             {
-                skillRequest = AlexaBotMessageSerializer.Deserialize<AlexaRequestBody>(bodyReader);
+                alexaRequest = AlexaBotMessageSerializer.Deserialize<SkillRequest>(jsonTextReader);
             }
 
-            if (skillRequest.Version != "1.0")
-                throw new Exception($"Unexpected version of '{skillRequest.Version}' received.");
+            if (alexaRequest.Version != "1.0")
+                throw new Exception($"Unexpected version of '{alexaRequest.Version}' received.");
 
             if (ValidateRequests)
             {
@@ -70,11 +69,11 @@ namespace Bot.Builder.Community.Adapters.Alexa.Integration.AspNet.Core
                 httpRequest.Headers.TryGetValue("Signature", out var signatures);
                 var certChainUrl = certUrls.FirstOrDefault();
                 var signature = signatures.FirstOrDefault();
-                await AlexaValidateRequestSecurityHelper.Validate(skillRequest, requestBytes, certChainUrl, signature);
+                await AlexaValidateRequestSecurityHelper.Validate(alexaRequest, body, certChainUrl, signature);
             }
 
             var alexaResponse = await ProcessActivity(
-                skillRequest,
+                alexaRequest,
                 bot.OnTurnAsync);
 
             if (alexaResponse == null)

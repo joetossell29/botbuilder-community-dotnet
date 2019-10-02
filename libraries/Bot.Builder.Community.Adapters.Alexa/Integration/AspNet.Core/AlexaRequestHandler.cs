@@ -8,6 +8,8 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Threading.Tasks;
+using Alexa.NET.Request;
+using Alexa.NET.Response;
 using Bot.Builder.Community.Adapters.Alexa.Helpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Bot.Builder;
@@ -35,18 +37,16 @@ namespace Bot.Builder.Community.Adapters.Alexa.Integration.AspNet.Core
             _alexaOptions = alexaOptions;
         }
        
-        protected async Task<AlexaResponseBody> ProcessMessageRequestAsync(HttpRequest request, AlexaAdapter alexaAdapter, BotCallbackHandler botCallbackHandler)
+        protected async Task<SkillResponse> ProcessMessageRequestAsync(HttpRequest request, AlexaAdapter alexaAdapter, BotCallbackHandler botCallbackHandler)
         {
-            AlexaRequestBody alexaRequest;
+            SkillRequest alexaRequest;
 
-            var memoryStream = new MemoryStream();
-            request.Body.CopyTo(memoryStream);
-            var requestBytes = memoryStream.ToArray();
-            memoryStream.Position = 0;
+            var streamReader = new StreamReader(request.Body, Encoding.UTF8);
+            var body = await streamReader.ReadToEndAsync();
 
-            using (var bodyReader = new JsonTextReader(new StreamReader(memoryStream, Encoding.UTF8)))
+            using (var jsonTextReader = new JsonTextReader(new StringReader(body)))
             {
-                alexaRequest = AlexaBotMessageSerializer.Deserialize<AlexaRequestBody>(bodyReader);
+                alexaRequest = AlexaBotMessageSerializer.Deserialize<SkillRequest>(jsonTextReader);
             }
 
             if (alexaRequest.Version != "1.0")
@@ -58,7 +58,7 @@ namespace Bot.Builder.Community.Adapters.Alexa.Integration.AspNet.Core
                 request.Headers.TryGetValue("Signature", out var signatures);
                 var certChainUrl = certUrls.FirstOrDefault();
                 var signature = signatures.FirstOrDefault();
-                await AlexaValidateRequestSecurityHelper.Validate(alexaRequest, requestBytes, certChainUrl, signature);
+                await AlexaValidateRequestSecurityHelper.Validate(alexaRequest, body, certChainUrl, signature);
             }
 
             var alexaResponseBody = await alexaAdapter.ProcessActivity(

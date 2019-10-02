@@ -1,8 +1,13 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Threading.Tasks;
+using Alexa.NET.Request;
+using Alexa.NET.Response;
+using Alexa.NET.Response.Directive;
 using Bot.Builder.Community.Adapters.Alexa.Directives;
 using Microsoft.Bot.Builder;
 using Newtonsoft.Json;
@@ -12,14 +17,26 @@ namespace Bot.Builder.Community.Adapters.Alexa
 {
     public static class AlexaContextExtensions
     {
-        public static Dictionary<string, string> AlexaSessionAttributes(this ITurnContext context)
+        public static Dictionary<string, object> AlexaSessionAttributes(this ITurnContext context)
         {
-            return context.TurnState.Get<Dictionary<string, string>>("AlexaSessionAttributes");
+            var sessionAttributes = context.TurnState.Get<Dictionary<string, string>>("AlexaSessionAttributes");
+            return CastDict(sessionAttributes)
+                .ToDictionary(
+                    entry => (string)entry.Key,
+                    entry => entry.Value);
         }
 
-        public static List<IAlexaDirective> AlexaResponseDirectives(this ITurnContext context)
+        private static IEnumerable<DictionaryEntry> CastDict(IDictionary dictionary)
         {
-            return context.TurnState.Get<List<IAlexaDirective>>("AlexaResponseDirectives");
+            foreach (DictionaryEntry entry in dictionary)
+            {
+                yield return entry;
+            }
+        }
+
+        public static List<IDirective> AlexaResponseDirectives(this ITurnContext context)
+        {
+            return context.TurnState.Get<List<IDirective>>("AlexaResponseDirectives");
         }
 
         public static void AlexaSetRepromptSpeech(this ITurnContext context, string repromptSpeech)
@@ -27,75 +44,46 @@ namespace Bot.Builder.Community.Adapters.Alexa
             context.TurnState.Add("AlexaReprompt", repromptSpeech);
         }
 
-        public static void AlexaSetCard(this ITurnContext context, AlexaCard card)
+        public static void AlexaSetCard(this ITurnContext context, ICard card)
         {
             context.TurnState.Add("AlexaCard", card);
         }
 
         public static async Task<HttpResponseMessage> AlexaSendProgressiveResponse(this ITurnContext context, string content)
         {
-            var originalAlexaRequest = (AlexaRequestBody)context.Activity.ChannelData;
+            var originalAlexaRequest = (SkillRequest)context.Activity.ChannelData;
 
-            var directive = new AlexaDirectiveRequest()
-            {
-                Header = new AlexaDirectiveRequest.DirectiveHeader()
-                {
-                    RequestId = originalAlexaRequest.Request.RequestId
-                },
-                Directive = new AlexaDirectiveRequest.DirectiveContent()
-                {
-                    Type = "VoicePlayer.Speak",
-                    Speech = content
-                }
-            };
-
-            var client = new HttpClient();
-
-            var jsonRequest = JsonConvert.SerializeObject(directive,
-                new JsonSerializerSettings { ContractResolver = new CamelCasePropertyNamesContractResolver() });
-
-            var directiveContent = new StringContent(jsonRequest, System.Text.Encoding.UTF8, "application/json");
-            var directiveEndpoint = $"{originalAlexaRequest.Context.System.ApiEndpoint}/v1/directives";
-
-            client.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Bearer", originalAlexaRequest.Context.System.ApiAccessToken);
-
-            return await client.PostAsync(directiveEndpoint, directiveContent);
+            var progressiveResponse = new ProgressiveResponse(originalAlexaRequest);
+            return await progressiveResponse.SendSpeech(content);
         }
 
-        public static AlexaRequestBody GetAlexaRequestBody(this ITurnContext context)
+        public static SkillRequest GetAlexaRequestBody(this ITurnContext context)
         {
-            try
-            {
-                return (AlexaRequestBody)context.Activity.ChannelData;
-            }
-            catch (Exception ex)
-            {
-                return null;
-            }
+            return context.Activity.ChannelData as SkillRequest;
         }
 
         public static bool AlexaDeviceHasDisplay(this ITurnContext context)
         {
-            var alexaRequest = (AlexaRequestBody)context.Activity.ChannelData;
+            var alexaRequest = (SkillRequest)context.Activity.ChannelData;
             var hasDisplay =
-                alexaRequest?.Context?.System?.Device?.SupportedInterfaces?.Interfaces?.Keys.Contains("Display");
+                alexaRequest?.Context?.System?.Device?.SupportedInterfaces?.Keys.Contains("Display");
             return hasDisplay.HasValue && hasDisplay.Value;
         }
 
         public static bool AlexaDeviceHasAudioPlayer(this ITurnContext context)
         {
-            var alexaRequest = (AlexaRequestBody)context.Activity.ChannelData;
+            var alexaRequest = (SkillRequest)context.Activity.ChannelData;
             var hasDisplay =
-                alexaRequest?.Context?.System?.Device?.SupportedInterfaces?.Interfaces?.Keys.Contains("AudioPlayer");
+                alexaRequest?.Context?.System?.Device?.SupportedInterfaces?.Keys.Contains("AudioPlayer");
             return hasDisplay.HasValue && hasDisplay.Value;
         }
 
+        [Obsolete("Use Alexa.NET.CustomerProfile NuGet package to provide this functionality")]
         public static async Task<AlexaAddress> AlexaGetUserAddress(this ITurnContext context)
         {
-            var originalAlexaRequest = (AlexaRequestBody)context.Activity.ChannelData;
+            var originalAlexaRequest = (SkillRequest)context.Activity.ChannelData;
 
-            var deviceId = originalAlexaRequest.Context.System.Device.DeviceId;
+            var deviceId = originalAlexaRequest.Context.System.Device.DeviceID;
 
             var client = new HttpClient();
 
@@ -124,12 +112,13 @@ namespace Bot.Builder.Community.Adapters.Alexa
                 $"{response.StatusCode} with message {response.ReasonPhrase}");
         }
 
+        [Obsolete("Use Alexa.NET.CustomerProfile NuGet package to provide this functionality")]
         public static async Task<string> AlexaGetCustomerProfile(this ITurnContext context, string item)
         {
             if ((item != AlexaCustomerItem.Name) & (item != AlexaCustomerItem.GivenName) & (item != AlexaCustomerItem.Email) & (item != AlexaCustomerItem.MobileNumber))
                 throw new ArgumentException($"Invalid AlexaGetCustomerProfile item: {item}");
 
-            var originalAlexaRequest = (AlexaRequestBody)context.Activity.ChannelData;
+            var originalAlexaRequest = (SkillRequest)context.Activity.ChannelData;
 
             var client = new HttpClient();
 

@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Alexa.NET.Request;
+using Alexa.NET.Request.Type;
 using Microsoft.Bot.Builder;
 using Microsoft.Bot.Schema;
 
@@ -9,25 +11,22 @@ namespace Bot.Builder.Community.Adapters.Alexa.Middleware
     public class AlexaIntentRequestToMessageActivityMiddleware : IMiddleware
     {
         private readonly RequestTransformPatterns _transformPattern;
-        private readonly Func<ITurnContext, AlexaIntentRequest, string> _createMessageActivityText;
+        private readonly Func<ITurnContext, IntentRequest, string> _createMessageActivityText;
 
         public AlexaIntentRequestToMessageActivityMiddleware(RequestTransformPatterns transformPattern = RequestTransformPatterns.MessageActivityTextFromSinglePhraseSlotValue)
         {
             _transformPattern = transformPattern;
         }
 
-        public AlexaIntentRequestToMessageActivityMiddleware(Func<ITurnContext, AlexaIntentRequest, string> createMessageActivityText)
+        public AlexaIntentRequestToMessageActivityMiddleware(Func<ITurnContext, IntentRequest, string> createMessageActivityText)
         {
             _createMessageActivityText = createMessageActivityText;
         }
 
         public async Task OnTurnAsync(ITurnContext context, NextDelegate next, CancellationToken cancellationToken = default(CancellationToken))
         {
-            if (context.Activity.ChannelId == "alexa" && context.Activity.Type == AlexaRequestTypes.IntentRequest)
+            if (context.Activity.ChannelId == "alexa" && ((SkillRequest)context.Activity.ChannelData).Request is IntentRequest alexaIntentRequest)
             {
-                var skillRequest = (AlexaRequestBody)context.Activity.ChannelData;
-                var alexaIntentRequest = (AlexaIntentRequest)skillRequest.Request;
-
                 context.Activity.Type = ActivityTypes.Message;
 
                 if (_createMessageActivityText != null)

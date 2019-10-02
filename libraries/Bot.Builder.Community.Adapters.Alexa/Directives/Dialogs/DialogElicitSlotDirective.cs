@@ -4,6 +4,7 @@ namespace Bot.Builder.Community.Adapters.Alexa.Directives.Dialogs
     /// <summary>
     /// Sends Alexa a command to ask the user for the value of a specific slot.
     /// </summary>
+    [Obsolete("Use Alexa.NET.Response.Directive.DialogElicitSlot")]
     public class DialogElicitSlotDirective : DialogDirective
     {
         public DialogElicitSlotDirective(string intent, string slotToElicit)
@@ -12,7 +13,7 @@ namespace Bot.Builder.Community.Adapters.Alexa.Directives.Dialogs
             SlotToElicit = slotToElicit;
         }
 
-        public string Type => "Dialog.ElicitSlot";
+        public override string Type => "Dialog.ElicitSlot";
 
         public string SlotToElicit { get; set; }
     }

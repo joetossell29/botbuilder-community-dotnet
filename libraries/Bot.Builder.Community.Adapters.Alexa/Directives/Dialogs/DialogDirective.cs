@@ -1,22 +1,26 @@
 ﻿using System;
+using Alexa.NET;
+using Alexa.NET.Request;
+using Alexa.NET.Response;
+
 namespace Bot.Builder.Community.Adapters.Alexa.Directives.Dialogs
 {
-    public abstract class DialogDirective : IAlexaDirective
+    [Obsolete("Use Alexa.NET Dialog Directives")]
+    public abstract class DialogDirective : IDirective
     {
         public DialogDirective(string intent)
         {
-            UpdatedIntent = new AlexaIntent();
-            UpdatedIntent.Name = intent;
+            UpdatedIntent = new Intent {Name = intent};
         }
 
-        public DialogDirective(string intent, AlexaConfirmationState confirmationStatus)
+        public DialogDirective(string intent, string confirmationStatus)
         {
-            UpdatedIntent = new AlexaIntent();
-            UpdatedIntent.Name = intent;
-            UpdatedIntent.ConfirmationStatus = confirmationStatus.ToString();
+            UpdatedIntent = new Intent {Name = intent, ConfirmationStatus = confirmationStatus};
         }
 
-        public AlexaIntent UpdatedIntent;
+        public Intent UpdatedIntent { get; }
+
+        public abstract string Type { get; }
 
         /// <summary>
         /// Sets a slot name and value.
@@ -24,18 +28,18 @@ namespace Bot.Builder.Community.Adapters.Alexa.Directives.Dialogs
         /// <param name="name"></param>
         /// <param name="confirmationStatus"></param>
         /// <param name="value"></param>
-        public void SetSlot(string name, string value, AlexaConfirmationState confirmationStatus)
+        public void SetSlot(string name, string value, string confirmationStatus)
         {
             // ensure we have slots
-            if (UpdatedIntent.Slots == null) UpdatedIntent.Slots = new System.Collections.Generic.Dictionary<string, AlexaSlot>();
+            if (UpdatedIntent.Slots == null) UpdatedIntent.Slots = new System.Collections.Generic.Dictionary<string, Slot>();
 
             // get the slot
-            AlexaSlot slot;
+            Slot slot;
             if (UpdatedIntent.Slots.ContainsKey(name))
                 slot = UpdatedIntent.Slots[name];
             else
             {
-                slot = new AlexaSlot();
+                slot = new Slot();
                 UpdatedIntent.Slots.Add(name, slot);
             }
 
